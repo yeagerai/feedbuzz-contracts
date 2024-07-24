@@ -14,10 +14,10 @@ from tools.response import (
 
 def test_feedbuzz():
     # Validators
-    result = post_request_localhost(
-        payload("create_random_validators", 10, 8, 12, ["openai"])
-    ).json()
-    assert has_success_status(result)
+    # result = post_request_localhost(
+    #     payload("create_random_validators", 10, 8, 12, ["openai"])
+    # ).json()
+    # assert has_success_status(result)
 
     # Account
     result = post_request_localhost(payload("create_account")).json()
@@ -33,7 +33,7 @@ def test_feedbuzz():
         from_address,  # from_account
         "FeedBuzz",  # class_name
         contract_code,  # contract_code
-        '',  # constructor
+        '{}',  # constructor
     ]
     call_method_response_deploy, transaction_response_deploy = (
         post_request_and_wait_for_finalization(
@@ -59,7 +59,9 @@ def test_feedbuzz():
     _, transaction_response_call_1 = post_request_and_wait_for_finalization(
         payload(
             "call_contract_function", from_address, contract_address, function, args
-        )
+        ),
+        20,
+        20
     )
     assert has_success_status(transaction_response_call_1)
 

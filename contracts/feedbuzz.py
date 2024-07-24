@@ -1,11 +1,13 @@
 import json
-from genvm.base.icontract import IContract
-from genvm.base.equivalence_principle import call_llm_with_principle
+from backend.node.genvm.icontract import IContract
+from backend.node.genvm.equivalence_principle import call_llm_with_principle
 
 
 class FeedBuzz(IContract):
     def __init__(self):
-        self.log_history = []
+        self.log_history = {}
+        self.next_log_id = 0
+        self.vector_store = VectorStore()
 
     async def submit_log(self, log: str) -> None:
         contains_failed_request_prompt = f"""
@@ -52,22 +54,67 @@ If no missing capabilities are identified, return an empty array.
                 eq_principle="The provided list should contain all the missing features without being excessively duplicative. The identified features should have clear, concise titles",
                 comparative=False,
             )
-        missing_capabilites_list = json.loads(llm_response)
 
-        id = self.log_history.append({
+        print(llm_response)
+        missing_capabilities_list = json.loads(llm_response)
+
+        log_id = self.next_log_id
+        self.next_log_id += 1
+
+        self.log_history[log_id] = {
             "sender": contract_runner.from_address,
             "log": log,
-            "missing_capabilities": missing_capabilites_list,
-        })
+            "missing_capabilities": missing_capabilities_list,
+        }
 
-        for missing_capability in missing_capabilites_list["missing_capabilities"]:
+        for missing_capability in missing_capabilities_list["missing_capabilities"]:
             print(f"Missing capability: {missing_capability}")
-            # TODO: get closest capability form vector db
-            # check if it's the same capability with LLM call
-            # if not, create a new entry
-            # add reference to log id
 
-        return missing_capabilites_list
+            result = self.vector_store.get_closest_vector(missing_capability)
+
+            is_duplicate = False
+            if result is not None:
+                similarity, capability_id, existing_capability, metadata, _ = result
+
+                print(f"Existing capability: {existing_capability}")
+                print(f"Similarity: {similarity}")
+                print(f"Capability ID: {capability_id}")
+                print(f"Metadata: {metadata}")
+            
+                if similarity > 0.99:
+                    is_duplicate = True
+                elif similarity > 0.9:
+                    deduplicate_capabilities_prompt = f"""
+Following are two capabilities extracted from chat logs:
+            
+Existing capability: {existing_capability}
+Missing capability: {missing_capability}
+
+Determine if the two capabilities are the same, and can be merged, or if they are different.
+
+Output: JSON object:
+{{
+    "is_duplicate": true/false
+}}
+        """            
+                    llm_response = await call_llm_with_principle(
+                        deduplicate_capabilities_prompt,
+                        eq_principle="Output has to match exactly",
+                        comparative=True,
+                    )
+
+                    is_duplicate = json.loads(llm_response)["is_duplicate"]
+            
+            if is_duplicate:
+                metadata["log_ids"].append(log_id)
+                self.vector_store.update_text(capability_id, existing_capability, metadata)
+            else:
+                self.vector_store.add_text(missing_capability, {"log_ids": [log_id]})
+
+        return missing_capabilities_list
 
     def get_log_history(self):
         return self.log_history
+
+    def get_missing_capabilities(self):
+        return self.vector_store.get_all_items()
