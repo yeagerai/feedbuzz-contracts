@@ -25,20 +25,20 @@ Output:
 {{"unfulfilled_request": true/false}}
 """
         llm_response = await call_llm_with_principle(
-                contains_failed_request_prompt,
-                eq_principle="Output has to match exactly",
-            )
+            contains_failed_request_prompt,
+            eq_principle="Output has to match exactly",
+        )
         contains_unfulfilled_request = json.loads(llm_response)["unfulfilled_request"]
 
         if not contains_unfulfilled_request:
             return "The chat log doesn't contain a failed request"
-        
+
         extract_missing_capabilities_prompt = f"""
 Examine the provided chat log of a conversation with an LLM-based agent. Identify any requests made by the user that the agent was unable to fulfill due to missing capabilities. Extract and list these missing features or capabilities in JSON format.
 
 Input: [{log}]
 
-Output: JSON array of missing features/capabilities, e.g.:
+Output: JSON object with array of missing features/capabilities, e.g.:
 {{
   "missing_capabilities": [
     "real-time data access",
@@ -47,13 +47,14 @@ Output: JSON array of missing features/capabilities, e.g.:
   ]
 }}
 
-If no missing capabilities are identified, return an empty array.
+If no missing capabilities are identified, return an empty array {{"missing_capabilities": []}}.
+ONLY respond with the JSON object, without any additional text or explanations.
 """
         llm_response = await call_llm_with_principle(
-                extract_missing_capabilities_prompt,
-                eq_principle="The provided list should contain all the missing features without being excessively duplicative. The identified features should have clear, concise titles",
-                comparative=False,
-            )
+            extract_missing_capabilities_prompt,
+            eq_principle="The provided list should contain all the missing features without being excessively duplicative. The identified features should have clear, concise titles",
+            comparative=False,
+        )
 
         print(llm_response)
         missing_capabilities_list = json.loads(llm_response)
@@ -80,7 +81,7 @@ If no missing capabilities are identified, return an empty array.
                 print(f"Similarity: {similarity}")
                 print(f"Capability ID: {capability_id}")
                 print(f"Metadata: {metadata}")
-            
+
                 if similarity > 0.99:
                     is_duplicate = True
                 elif similarity > 0.9:
@@ -96,7 +97,7 @@ Output: JSON object:
 {{
     "is_duplicate": true/false
 }}
-        """            
+        """
                     llm_response = await call_llm_with_principle(
                         deduplicate_capabilities_prompt,
                         eq_principle="Output has to match exactly",
@@ -104,10 +105,12 @@ Output: JSON object:
                     )
 
                     is_duplicate = json.loads(llm_response)["is_duplicate"]
-            
+
             if is_duplicate:
                 metadata["log_ids"].append(log_id)
-                self.vector_store.update_text(capability_id, existing_capability, metadata)
+                self.vector_store.update_text(
+                    capability_id, existing_capability, metadata
+                )
             else:
                 self.vector_store.add_text(missing_capability, {"log_ids": [log_id]})
 
